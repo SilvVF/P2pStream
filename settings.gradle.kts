@@ -17,8 +17,15 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { setUrl("https://jitpack.io") }
+        maven { setUrl("https://dl.cloudsmith.io/public/libp2p/jvm-libp2p/maven/") }
+        maven { setUrl("https://artifacts.consensys.net/public/maven/maven/") }
     }
 }
 
+
+
 rootProject.name = "P2pStream"
-include(":app")
+
+include(
+    ":app",
+)

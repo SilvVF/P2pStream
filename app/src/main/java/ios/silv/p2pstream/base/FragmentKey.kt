@@ -1,4 +1,4 @@
-package ios.silv.p2pstream.nav
+package ios.silv.p2pstream.base
 
 import android.os.Parcelable
 import com.zhuinden.simplestack.ServiceBinder

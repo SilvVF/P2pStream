@@ -12,8 +12,9 @@ import com.zhuinden.simplestack.StateChange
 import com.zhuinden.simplestack.navigator.Navigator
 import com.zhuinden.simplestackextensions.lifecyclektx.observeAheadOfTimeWillHandleBackChanged
 import com.zhuinden.simplestackextensions.navigatorktx.androidContentFrame
-import ios.silv.p2pstream.nav.FragmentStateChanger
-import ios.silv.p2pstream.nav.ServiceProvider
+import ios.silv.p2pstream.feature.home.HomeKey
+import ios.silv.p2pstream.base.FragmentStateChanger
+import ios.silv.p2pstream.base.ServiceProvider
 
 class MainActivity : AppCompatActivity(), SimpleStateChanger.NavigationHandler {
 
@@ -37,10 +38,12 @@ class MainActivity : AppCompatActivity(), SimpleStateChanger.NavigationHandler {
         backstack = Navigator.configure()
             .setBackHandlingModel(BackHandlingModel.AHEAD_OF_TIME)
             .setStateChanger(SimpleStateChanger(this))
-            .setScopedServices(ServiceProvider())
             .setGlobalServices(requireNotNull(application as? App).globalServices)
+            .setScopedServices(ServiceProvider())
             .install(
-                this, androidContentFrame, History.of<Nothing>()
+                this, androidContentFrame, History.of(
+                    HomeKey
+                )
             )
 
         backPressedCallback.isEnabled = backstack.willHandleAheadOfTimeBack()
