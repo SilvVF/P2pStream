@@ -17,6 +17,19 @@ fun <K, V> MutableStateFlow<Map<K, V>>.mutate(update: MutableMap<K, V>.() -> Uni
     }
 }
 
+class MutableStateFlowList<T: Any>(
+    value: List<T>
+) : MutableStateFlow<List<T>> by MutableStateFlow(value) {
+
+    operator fun get(index: Int): T = this.value[index]
+
+    operator fun set(index: Int, value: T) {
+        mutate {
+            this[index] = value
+        }
+    }
+}
+
 class MutableStateFlowMap<K: Any, V: Any>(
     value: Map<K, V>
 ) : MutableStateFlow<Map<K, V>> by MutableStateFlow(value) {

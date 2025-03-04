@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,10 +28,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zhuinden.simplestack.Backstack
+import ios.silv.p2pstream.R
 import ios.silv.p2pstream.base.ComposeFragment
 
 class HomeFragment: ComposeFragment() {
@@ -48,6 +51,16 @@ class HomeFragment: ComposeFragment() {
             topBar = {
                 TopAppBar(
                     title = { Text("Home") },
+                    actions = {
+                        IconButton(
+                            onClick = { viewModel.onCall() },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Call,
+                                contentDescription = stringResource(R.string.call)
+                            )
+                        }
+                    }
                 )
             },
             contentWindowInsets = WindowInsets.systemBars

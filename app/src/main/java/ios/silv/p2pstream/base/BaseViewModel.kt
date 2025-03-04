@@ -6,11 +6,13 @@ import com.zhuinden.simplestack.ScopedServices
 import com.zhuinden.statebundle.StateBundle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
 abstract class BaseViewModel: Bundleable, ScopedServices.Registered {
 
-    protected val scope = CoroutineScope(Dispatchers.Main)
+    private val job = SupervisorJob()
+    protected val scope = CoroutineScope(Dispatchers.Main.immediate + job)
 
     override fun toBundle(): StateBundle = StateBundle()
     override fun fromBundle(bundle: StateBundle?) = Unit
@@ -20,5 +22,6 @@ abstract class BaseViewModel: Bundleable, ScopedServices.Registered {
     @CallSuper
     override fun onServiceUnregistered() {
         scope.cancel()
+        job.cancel()
     }
 }

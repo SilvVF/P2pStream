@@ -4,6 +4,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import com.zhuinden.simplestack.Backstack
 import ios.silv.p2pstream.base.BaseViewModel
 import ios.silv.p2pstream.base.mutate
+import ios.silv.p2pstream.feature.call.CallKey
 import ios.silv.p2pstream.net.Message
 import ios.silv.p2pstream.net.P2pManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +19,7 @@ import kotlinx.coroutines.launch
 
 class HomeViewModel(
     private val p2pManager: P2pManager,
-    backstack: Backstack
+    private val backstack: Backstack
 ): BaseViewModel() {
 
     private val _messages = MutableStateFlow(emptyList<Message.Text>())
@@ -47,5 +48,9 @@ class HomeViewModel(
 
     fun changeText(textFieldValue: TextFieldValue) {
         _text.update { textFieldValue }
+    }
+
+    fun onCall() {
+        backstack.goTo(CallKey)
     }
 }
