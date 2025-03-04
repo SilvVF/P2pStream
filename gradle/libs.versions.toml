@@ -15,10 +15,10 @@ camerax = "1.4.1"
 
 kotlinxSerializationJson = "1.8.0"
 
-composeNav = "2.8.8"
 composeUi = "1.7.8"
 compose = "1.7.8"
 
+simpleStackCompose ="0.13.1"
 simpleStack = "2.9.0"
 simpleStackExt = "2.3.4"
 
@@ -35,8 +35,10 @@ androidx-material3 = { module = "androidx.compose.material3:material3", version.
 androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "coreSplashscreen" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 
+simple-stack-compose = { module = "com.github.Zhuinden:simple-stack-compose-integration", version.ref = "simpleStackCompose" }
 simple-stack = { module = "com.github.Zhuinden:simple-stack", version.ref = "simpleStack" }
 simple-stack-ext = { module = "com.github.Zhuinden:simple-stack-extensions", version.ref = "simpleStackExt" }
+
 
 libp2p = { module = "com.github.libp2p:jvm-libp2p", version.ref = "libp2p"}
 
@@ -51,8 +53,6 @@ compose-runtime= { module = "androidx.compose.runtime:runtime", version.ref= "co
 compose-foundation= { module = "androidx.compose.foundation:foundation", version.ref= "compose"}
 compose-foundation-layout = { module = "androidx.compose.foundation:foundation-layout", version.ref= "compose"}
 compose-animation = { module = "androidx.compose.animation:animation" , version.ref= "compose"}
-
-compose-navigation = { module = "androidx.navigation:navigation-compose", version.ref = "composeNav" }
 
 androidx-camera-core= { module = "androidx.camera:camera-core", version.ref = "camerax" }
 androidx-camera2= { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
@@ -70,7 +70,7 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 
 [bundles]
-simple-stack = ["simple-stack", "simple-stack-ext"]
+simple-stack = ["simple-stack-compose","simple-stack", "simple-stack-ext"]
 compose-ui = ["compose-ui", "compose-ui-tooling", "compose-ui-util", "compose-ui-text", "compose-ui-unit", "compose-ui-geometry"]
 compose-runtime = ["compose-runtime", "compose-foundation", "compose-foundation-layout", "compose-animation"]
 camerax = ["androidx-camera-core", "androidx-camera2", "androidx-camera-lifecycle", "androidx-camera-video", "androidx-camera-view"]

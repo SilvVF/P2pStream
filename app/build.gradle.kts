@@ -73,8 +73,6 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.core.splashscreen)
 
-    implementation(libs.compose.navigation)
-
     implementation(libs.bundles.camerax)
 
     implementation(libs.libp2p)

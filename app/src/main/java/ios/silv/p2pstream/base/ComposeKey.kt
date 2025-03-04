@@ -2,10 +2,12 @@ package ios.silv.p2pstream.base
 
 import android.os.Parcelable
 import com.zhuinden.simplestack.ServiceBinder
-import com.zhuinden.simplestackextensions.fragments.DefaultFragmentKey
+import com.zhuinden.simplestackcomposeintegration.core.DefaultComposeKey
 import com.zhuinden.simplestackextensions.services.DefaultServiceProvider
 
-abstract class FragmentKey : DefaultFragmentKey(), Parcelable, DefaultServiceProvider.HasServices {
+abstract class ComposeKey : DefaultComposeKey(), Parcelable, DefaultServiceProvider.HasServices {
+    override val saveableStateProviderKey: Any get() = this
+
     override fun getScopeTag(): String = toString()
 
     override fun bindServices(serviceBinder: ServiceBinder) {
