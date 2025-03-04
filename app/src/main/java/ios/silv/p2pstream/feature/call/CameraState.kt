@@ -27,6 +27,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import ios.silv.p2pstream.base.MutableStateFlowList
 import ios.silv.p2pstream.base.mutate
+import ios.silv.p2pstream.log.LogPriority
 import ios.silv.p2pstream.log.logcat
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -329,7 +330,7 @@ class CameraStateHolder internal constructor(
 
         analyzer.setAnalyzer(mainThreadExecutor) { imageProxy ->
             val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-            logcat { "received a frame h:${imageProxy.height}, w:${imageProxy.width}, r:${rotationDegrees}" }
+            logcat(LogPriority.VERBOSE) { "received a frame h:${imageProxy.height}, w:${imageProxy.width}, r:${rotationDegrees}" }
             val nv21 = imageProxy.toNV21()
             encoder.encodeFrame(nv21)
             imageProxy.close()

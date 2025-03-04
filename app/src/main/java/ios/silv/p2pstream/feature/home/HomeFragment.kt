@@ -33,79 +33,90 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zhuinden.simplestack.Backstack
+import com.zhuinden.simplestackextensions.servicesktx.lookup
 import ios.silv.p2pstream.R
 import ios.silv.p2pstream.base.ComposeFragment
 
-class HomeFragment: ComposeFragment() {
+class HomeFragment {
 
-    @OptIn(ExperimentalMaterial3Api::class)
-    @Composable
-    override fun FragmentComposable(backstack: Backstack) {
+    companion object {
+        @Composable
+        fun Content(backstack: Backstack) {
+            ComposeContent(backstack)
+        }
+    }
 
-        val viewModel = backStackViewModel<HomeViewModel>()
+//    @Composable
+//    override fun FragmentComposable(backstack: Backstack) = Content(backstack)
+}
 
-        val messages by viewModel.messages.collectAsStateWithLifecycle()
-        val text by viewModel.text.collectAsStateWithLifecycle()
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ComposeContent(backstack: Backstack) {
 
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("Home") },
-                    actions = {
-                        IconButton(
-                            onClick = { viewModel.onCall() },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Call,
-                                contentDescription = stringResource(R.string.call)
-                            )
-                        }
-                    }
-                )
-            },
-            contentWindowInsets = WindowInsets.systemBars
-        ) { paddingValues ->
-            Column(
-                modifier = Modifier.padding(
-                    bottom = paddingValues.calculateBottomPadding()
-                )
-            ) {
-                LazyColumn(
-                    Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = paddingValues
-                ) {
-                    item {
-                        val clients by viewModel.clients.collectAsStateWithLifecycle()
+    val viewModel = remember { backstack.lookup<HomeViewModel>() }
 
-                        Column {
-                            clients.fastForEach {
-                                val name by it.second.collectAsStateWithLifecycle()
-                                val id = remember { it.first.toBase58() }
-                                Text("$id $name")
-                            }
-                        }
-                    }
-                    items(messages, key = { it.peerId + it.data }) {
-                        Text("peer: ${it.peerId} data: ${it.data}")
+    val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val text by viewModel.text.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Home") },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.onCall() },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Call,
+                            contentDescription = stringResource(R.string.call)
+                        )
                     }
                 }
-                TextField(
-                    value = text,
-                    modifier = Modifier
-                        .imePadding(),
-                    onValueChange = viewModel::changeText,
-                    trailingIcon = {
-                        IconButton(
-                            onClick = viewModel::sendMessage
-                        ) {
-                            Icon(Icons.AutoMirrored.Default.Send, null)
+            )
+        },
+        contentWindowInsets = WindowInsets.systemBars
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier.padding(
+                bottom = paddingValues.calculateBottomPadding()
+            )
+        ) {
+            LazyColumn(
+                Modifier.fillMaxWidth().weight(1f),
+                contentPadding = paddingValues
+            ) {
+                item {
+                    val clients by viewModel.clients.collectAsStateWithLifecycle()
+
+                    Column {
+                        clients.fastForEach {
+                            val name by it.second.collectAsStateWithLifecycle()
+                            val id = remember { it.first.toBase58() }
+                            Text("$id $name")
                         }
-                    },
-                    keyboardActions = KeyboardActions(
-                        onDone = { viewModel.sendMessage() }
-                    )
-                )
+                    }
+                }
+                items(messages, key = { it.peerId + it.data }) {
+                    Text("peer: ${it.peerId} data: ${it.data}")
+                }
             }
+            TextField(
+                value = text,
+                modifier = Modifier
+                    .imePadding(),
+                onValueChange = viewModel::changeText,
+                trailingIcon = {
+                    IconButton(
+                        onClick = viewModel::sendMessage
+                    ) {
+                        Icon(Icons.AutoMirrored.Default.Send, null)
+                    }
+                },
+                keyboardActions = KeyboardActions(
+                    onDone = { viewModel.sendMessage() }
+                )
+            )
         }
     }
 }

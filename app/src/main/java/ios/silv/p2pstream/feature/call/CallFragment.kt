@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.zhuinden.simplestack.Backstack
+import com.zhuinden.simplestackextensions.servicesktx.lookup
 import ios.silv.p2pstream.base.ComposeFragment
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -47,87 +48,97 @@ private val requiredPermission = arrayOf(
 )
 
 
-class CallFragment : ComposeFragment() {
+class CallFragment {
 
-    @Composable
-    override fun FragmentComposable(backstack: Backstack) {
-        val viewModel = backStackViewModel<CallViewModel>()
-        val lifecycle = LocalLifecycleOwner.current
-
-
-        val context = LocalContext.current
-        val permissionState = remember {
-            mutableStateMapOf<String, Boolean>().apply {
-                putAll(requiredPermission.zip(
-                    Array(requiredPermission.size) {
-                        context.checkSelfPermission(requiredPermission[it]) == PackageManager.PERMISSION_GRANTED
-                    }
-                ))
-            }
+    companion object {
+        @Composable
+        fun Content(backstack: Backstack) {
+            ComposeContent(backstack)
         }
+    }
 
-        val launcher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions()
-        ) { permissions ->
-            permissions.forEach { (p, res) ->
-                permissionState[p] = res
-            }
+//    @Composable
+//    override fun FragmentComposable(backstack: Backstack) = Content(backstack)
+}
+
+@Composable
+private fun ComposeContent(backstack: Backstack) {
+    val viewModel = remember { backstack.lookup<CallViewModel>() }
+    val lifecycle = LocalLifecycleOwner.current
+
+
+    val context = LocalContext.current
+    val permissionState = remember {
+        mutableStateMapOf<String, Boolean>().apply {
+            putAll(requiredPermission.zip(
+                Array(requiredPermission.size) {
+                    context.checkSelfPermission(requiredPermission[it]) == PackageManager.PERMISSION_GRANTED
+                }
+            ))
         }
+    }
 
-        val allGranted by remember(permissionState) {
-            derivedStateOf { permissionState.all { it.value } }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        permissions.forEach { (p, res) ->
+            permissionState[p] = res
         }
+    }
 
-        if (allGranted) {
-            val cameraStateHolder =
-                remember { CameraStateHolder(requireContext(), lifecycle, Channel()) }
+    val allGranted by remember(permissionState) {
+        derivedStateOf { permissionState.all { it.value } }
+    }
 
-            LaunchedEffect(Unit) {
-                cameraStateHolder.lifecycleOwner.lifecycleScope.launch {
-                    cameraStateHolder.lifecycleOwner.repeatOnLifecycle(Lifecycle.State.CREATED) {
-                        if (cameraStateHolder.deferredCapabilities != null) {
-                            cameraStateHolder.deferredCapabilities!!.await()
-                            cameraStateHolder.deferredCapabilities = null
-                        }
+    if (allGranted) {
+        val cameraStateHolder =
+            remember { CameraStateHolder(context, lifecycle, Channel()) }
+
+        LaunchedEffect(Unit) {
+            cameraStateHolder.lifecycleOwner.lifecycleScope.launch {
+                cameraStateHolder.lifecycleOwner.repeatOnLifecycle(Lifecycle.State.CREATED) {
+                    if (cameraStateHolder.deferredCapabilities != null) {
+                        cameraStateHolder.deferredCapabilities!!.await()
+                        cameraStateHolder.deferredCapabilities = null
                     }
                 }
-
             }
-            DisposableEffect(cameraStateHolder) {
-                cameraStateHolder.encoder.start()
-                val job = cameraStateHolder.startFrameListener()
-                onDispose {
-                    job.cancel()
-                    cameraStateHolder.encoder.stop()
-                    cameraStateHolder.encoder.release()
+
+        }
+        DisposableEffect(cameraStateHolder) {
+            cameraStateHolder.encoder.start()
+            val job = cameraStateHolder.startFrameListener()
+            onDispose {
+                job.cancel()
+                cameraStateHolder.encoder.stop()
+                cameraStateHolder.encoder.release()
+            }
+        }
+
+
+        Scaffold { paddingValues ->
+            CameraComposeView(
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize(),
+                cameraState = cameraStateHolder
+            )
+        }
+    } else {
+        Column(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Button(
+                onClick = {
+                    launcher.launch(requiredPermission)
                 }
-            }
-
-
-            Scaffold { paddingValues ->
-                CameraComposeView(
-                    modifier = Modifier
-                        .padding(paddingValues)
-                        .fillMaxSize(),
-                    cameraState = cameraStateHolder
-                )
-            }
-        } else {
-            Column(
-                Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Button(
-                    onClick = {
-                        launcher.launch(requiredPermission)
-                    }
-                ) {
-                    Text("Grant Permissions")
-                }
-                permissionState.forEach { (p, v) ->
-                    Text("Perm: $p, state: $v")
-                }
+                Text("Grant Permissions")
+            }
+            permissionState.forEach { (p, v) ->
+                Text("Perm: $p, state: $v")
             }
         }
     }
