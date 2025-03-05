@@ -76,6 +76,8 @@ dependencies {
     implementation(libs.bundles.camerax)
 
     implementation(libs.libp2p)
+    implementation(libs.root.encoder)
+    implementation(libs.root.encoder.sources)
 
     implementation(libs.kotlinx.serialization.json)
 }

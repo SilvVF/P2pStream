@@ -3,8 +3,9 @@ package ios.silv.p2pstream.net
 import android.content.Context
 import android.content.Context.WIFI_SERVICE
 import android.net.wifi.WifiManager
-import androidx.core.content.ContextCompat.getSystemService
 import com.zhuinden.simplestack.ScopedServices
+import io.libp2p.core.PeerId
+import ios.silv.p2pstream.base.MutableStateFlowMap
 import ios.silv.p2pstream.log.logcat
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
@@ -15,35 +16,54 @@ import kotlinx.coroutines.channels.Channel.Factory.RENDEZVOUS
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.launch
-
+import kotlinx.coroutines.time.withTimeout
+import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.seconds
 
 class P2pManager(
     context: Context,
     dispatcher: CoroutineDispatcher,
 ): ScopedServices.Registered {
 
-    private lateinit var node: P2pNode
     private lateinit var multicastLock: WifiManager.MulticastLock
     private val initialized = Channel<Unit>(RENDEZVOUS)
-
     private val scope = CoroutineScope(dispatcher + SupervisorJob() + CoroutineName("P2pManager"))
+
+    lateinit var node: P2pNode
 
     private val wifi by lazy { context.getSystemService(WIFI_SERVICE) as WifiManager }
 
-    private val _frameCh = MutableSharedFlow<Message.Frame>()
-    val frameCh = _frameCh.asSharedFlow()
-    private val _textCh = MutableSharedFlow<Message.Text>()
-    val textCh = _textCh.asSharedFlow()
+    private val broadcastCh = Channel<String>()
+    val broadcast: SendChannel<String> = broadcastCh
 
-    private val output = Channel<String>()
-    val outCh = output as SendChannel<String>
+    private val _messages = MutableSharedFlow<Message>()
+    val message: SharedFlow<Message> get() = _messages
+
+    val callState = flow {
+
+        emit(emptyMap())
+
+        try {
+            initialized.receive()
+        } catch (_: ClosedReceiveChannelException){}
+
+        node.callQueue.dialing.collect {
+            emit(it)
+        }
+    }
+
+    fun getAlias(peerId: PeerId): String {
+        return node.peers[peerId]?.name?.value.orEmpty()
+    }
 
     private fun start() {
         logcat { "starting P2pManager" }
@@ -55,32 +75,27 @@ class P2pManager(
 
             launch {
                 logcat { "listening for outgoing messages" }
-                for (msg in output) {
-                    node.send(msg)
+                for (msg in broadcastCh) {
+                    node.broadcast(msg)
                 }
             }
 
-            node.received.collect {
-                logcat { "received incoming message $it" }
-                when(it) {
-                    is Message.Frame -> {
-                        _frameCh.emit(it)
-                    }
-                    is Message.Text -> {
-                        _textCh.emit(it)
-                    }
-                }
+            for (message in node.received) {
+                _messages.emit(message)
             }
         }
     }
 
     fun clientInfo() = flow {
+
+        emit(emptyList())
+
         try {
             initialized.receive()
-        } catch (e: ClosedReceiveChannelException){}
+        } catch (_: ClosedReceiveChannelException){}
 
-        node.clientInfo.collect {
-            emit(it)
+        node.peers.collect {
+            emit(it.map { (peerId, client) -> peerId to client.name })
         }
     }
 

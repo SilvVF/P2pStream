@@ -68,7 +68,7 @@ class P2pProtocol(
         return scope.launch {
             try {
                 ready.receive()
-            } catch (e: ClosedReceiveChannelException) { }
+            } catch (_: ClosedReceiveChannelException) { }
         }.asCompletableFuture().thenApply {
             logcat { "resolving handler" }
             handler
@@ -87,9 +87,11 @@ class P2pProtocol(
         }
 
         override fun onMessage(stream: Stream, msg: ByteBuf) {
-            logcat { "received onMessage ${stream.remotePeerId().toBase58()}" }
             val peerId = stream.remotePeerId()
             val (type, data) = decodeType(msg)
+
+            logcat { "received onMessage id=${stream.remotePeerId().toBase58()} type=$type" }
+
             when (type) {
                 MESSAGE -> handler.onMessage(peerId, data.toString(Charset.defaultCharset()))
                 FRAME -> handler.onFrame(peerId, data)
@@ -106,8 +108,8 @@ class P2pProtocol(
             val data = msg.readBytes(msg.readableBytes())
             return Pair(
                 type,
-                data.array()
-            )
+                data.array().clone()
+            ).also { msg.clear() }
         }
 
         private fun encodeType(type: Int, data: ByteArray): ByteBuf {

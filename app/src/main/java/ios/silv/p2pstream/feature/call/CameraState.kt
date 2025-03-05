@@ -1,13 +1,18 @@
 package ios.silv.p2pstream.feature.call
 
 import android.content.Context
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
 import android.media.MediaCodec
 import android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM
+import android.media.MediaCodec.BufferInfo
 import android.media.MediaCodec.CONFIGURE_FLAG_ENCODE
 import android.media.MediaCodec.INFO_TRY_AGAIN_LATER
 import android.media.MediaCodec.createEncoderByType
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.DynamicRange
 import androidx.camera.core.ImageAnalysis
@@ -21,16 +26,34 @@ import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.view.PreviewView
+import androidx.core.content.ContentProviderCompat.requireContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.pedro.common.ConnectChecker
+import com.pedro.common.toByteArray
+import com.pedro.encoder.BaseEncoder
+import com.pedro.encoder.input.sources.audio.NoAudioSource
+import com.pedro.encoder.utils.CodecUtil
+import com.pedro.encoder.video.GetVideoData
+import com.pedro.encoder.video.VideoEncoder
+import com.pedro.extrasources.BufferDecoder
+import com.pedro.extrasources.BufferVideoSource
+import com.pedro.library.generic.GenericStream
+import com.pedro.library.util.streamclient.GenericStreamClient
+import com.pedro.library.util.streamclient.RtspStreamClient
+import com.pedro.library.util.streamclient.StreamClientListener
+import com.pedro.rtmp.rtmp.RtmpClient
+import com.pedro.rtsp.rtsp.RtspClient
 import ios.silv.p2pstream.base.MutableStateFlowList
 import ios.silv.p2pstream.base.mutate
 import ios.silv.p2pstream.log.LogPriority
 import ios.silv.p2pstream.log.logcat
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.coroutineScope
@@ -43,6 +66,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.util.concurrent.Executors
 import kotlin.coroutines.cancellation.CancellationException
 
 data class CameraCapability(val camSelector: CameraSelector, val qualities: List<Quality>)
@@ -79,11 +105,11 @@ internal fun Quality.getAspectRatioString(portraitMode: Boolean): String {
 }
 
 
-private fun loadCameraCapabilities(
+private fun CoroutineScope.loadCameraCapabilities(
     lifecycleOwner: LifecycleOwner,
     context: Context,
     loaded: (CameraCapability) -> Unit
-): Deferred<Unit> = lifecycleOwner.lifecycleScope.async {
+): Deferred<Unit> = async {
     try {
 
         logcat { "getting provider" }
@@ -113,9 +139,10 @@ private fun loadCameraCapabilities(
                 logcat { "Camera Face $camSelector is not supported" }
             }
         }
-    } catch (e : CancellationException) {
+    } catch (e: CancellationException) {
         throw e
-    } catch (e: Exception) {}
+    } catch (e: Exception) {
+    }
 }
 
 sealed interface CameraUiEvent {
@@ -133,26 +160,6 @@ private val defaultMediaFormatBuilder: MediaFormat.() -> Unit = {
     setInteger(MediaFormat.KEY_BIT_RATE, 2000000)
     setInteger(MediaFormat.KEY_FRAME_RATE, 30)
     setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-}
-
-private fun createEncoder(
-    width: Int = 1920,
-    height: Int = 1080,
-    flags: Int = CONFIGURE_FLAG_ENCODE,
-    mimeType: String = VIDEO_AVC,
-    builder: MediaFormat.() -> Unit = defaultMediaFormatBuilder
-): MediaCodec {
-    // https://en.wikipedia.org/wiki/Advanced_Video_Coding
-    return createEncoderByType(mimeType).apply {
-        configure(
-            MediaFormat
-                .createVideoFormat(mimeType, width, height)
-                .apply(builder),
-            /*surface =*/null,
-            /*crypto =*/ null,
-            /*flags =*/flags
-        )
-    }
 }
 
 // https://en.wikipedia.org/wiki/Y%E2%80%B2UV
@@ -173,63 +180,85 @@ private fun ImageProxy.toNV21(): ByteArray {
     return nv21
 }
 
-// https://stuff.mit.edu/afs/sipb/project/android/docs/reference/android/media/MediaCodec.html
-private fun MediaCodec.encodeFrame(yuvData: ByteArray) {
-    val inputBufferIndex = dequeueInputBuffer(CODEC_TIMEOUT_US)
-    if (inputBufferIndex >= 0) {
-        val inputBuffer = getInputBuffer(inputBufferIndex) ?: return
-        inputBuffer.clear()
-        inputBuffer.put(yuvData)
-        queueInputBuffer(
-            /*index */ inputBufferIndex,
-            /*offset*/0,
-            /*size*/yuvData.size,
-            /*presentationTimeUs*/ System.nanoTime() / 1000,
-            /*flags*/0
-        )
+class BufferDecoderNotP(private val outCh: SendChannel<ByteArray>) {
+
+    private var codec: MediaCodec? = null
+    private var mediaFormat: MediaFormat? = null
+    private var startTs = 0L
+    private val bufferInfo = BufferInfo()
+    private val client = RtspClient(NoOpChecker)
+
+    private val executor = Executors.newSingleThreadExecutor()
+
+    fun prepare(width: Int, height: Int, fps: Int, rotation: Int, mime: String) {
+        val mediaFormat = MediaFormat()
+        if (rotation == 0 || rotation == 180) {
+            mediaFormat.setInteger(MediaFormat.KEY_WIDTH, width)
+            mediaFormat.setInteger(MediaFormat.KEY_HEIGHT, height)
+        } else {
+            mediaFormat.setInteger(MediaFormat.KEY_WIDTH, height)
+            mediaFormat.setInteger(MediaFormat.KEY_HEIGHT, width)
+        }
+        mediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+        mediaFormat.setString(MediaFormat.KEY_MIME, mime)
+        this.mediaFormat = mediaFormat
     }
-}
 
-// https://github.com/lykhonis/MediaCodec/blob/master/app/src/main/java/com/vladli/android/mediacodec/VideoEncoder.java
-private suspend fun MediaCodec.listenForEncodedFrames(frameCh: SendChannel<ByteArray>) =
-    coroutineScope {
-        val bufferInfo = MediaCodec.BufferInfo()
-        while (true) {
-            try {
-                val status = dequeueOutputBuffer(bufferInfo, CODEC_TIMEOUT_US)
-                when {
-                    status == INFO_TRY_AGAIN_LATER -> {
-                        ensureActive()
-                        delay(1)
-                    }
+    fun start() {
+        mediaFormat?.let {
+            startTs = System.nanoTime() / 1000
+            codec = MediaCodec.createDecoderByType(CodecUtil.H264_MIME)
+            codec?.start()
+        }
+    }
 
-                    status > 0 -> {
-                        val outputBuffer = getOutputBuffer(status) ?: continue
-                        val outData = ByteArray(bufferInfo.size)
-                        outputBuffer.get(outData)
-                        val eos =
-                            bufferInfo.flags and BUFFER_FLAG_END_OF_STREAM == BUFFER_FLAG_END_OF_STREAM
+    fun stop() {
+        try {
+            codec?.flush()
+            codec?.stop()
+            codec?.release()
+        } catch (ignored: Exception) { } finally {
+            codec = null
+            mediaFormat = null
+            startTs = 0
+        }
+    }
 
-                        if (!eos) {
-                            val result = frameCh.trySend(outData)
-                            logcat { "tried sending frame: $status success: ${result.isSuccess}" }
+    fun decode(data: ByteArray) {
+        codec?.let {
+            val inIndex = it.dequeueInputBuffer(10000)
+            if (inIndex >= 0) {
+                val input = it.getInputBuffer(inIndex)
+                input?.put(data)
+                it.queueInputBuffer(inIndex, 0, data.size, System.nanoTime() / 1000 - startTs, 0)
+            }
+            executor.execute {
+                try {
+                    val outIndex = it.dequeueOutputBuffer(bufferInfo, 10000)
+                    if (outIndex >= 0) {
+                        val out = it.getOutputBuffer(outIndex)
+                        runCatching {
+                            outCh.trySend(out!!.array())
+                            client.sendVideo(out, bufferInfo)
                         }
-                        releaseOutputBuffer(status, false)
-
-                        if (eos) {
-                            signalEndOfInputStream()
-                            break
-                        }
+                        it.releaseOutputBuffer(outIndex, System.nanoTime() / 1000 - startTs)
                     }
+                } catch (e: Exception) {
+                    logcat { e.stackTraceToString() }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                ensureActive()
-                logcat { e.stackTraceToString() }
             }
         }
     }
+}
+
+private val NoOpChecker = object : ConnectChecker {
+    override fun onAuthError() {}
+    override fun onAuthSuccess() {}
+    override fun onConnectionFailed(reason: String) {}
+    override fun onConnectionStarted(url: String) {}
+    override fun onConnectionSuccess() {}
+    override fun onDisconnect() {}
+}
 
 class CameraStateHolder internal constructor(
     private val context: Context,
@@ -249,7 +278,6 @@ class CameraStateHolder internal constructor(
     private val lifecycleScope: LifecycleCoroutineScope = lifecycleOwner.lifecycleScope
     private lateinit var captureView: PreviewView
     private lateinit var cameraProvider: ProcessCameraProvider
-    val encoder = createEncoder()
 
     var deferredCapabilities: Deferred<Unit>? = null
 
@@ -258,6 +286,16 @@ class CameraStateHolder internal constructor(
     private val uiEnabled = MutableStateFlow(false)
 
     private val cameraCapabilities = MutableStateFlowList<CameraCapability>(emptyList())
+
+    val width = 640
+    val height = 480
+    val vBitrate = 1200 * 1000
+    private var rotation = 0
+    private val sampleRate = 32000
+    private val isStereo = true
+    private val aBitrate = 128 * 1000
+
+    val decoder = BufferDecoderNotP(frameCh)
 
     private val mainThreadExecutor by lazy { ContextCompat.getMainExecutor(context) }
 
@@ -284,19 +322,15 @@ class CameraStateHolder internal constructor(
         )
 
     init {
-        deferredCapabilities = loadCameraCapabilities(lifecycleOwner, context) { capabilities ->
-            cameraCapabilities.mutate {
-                add(capabilities)
+        lifecycleScope.launch {
+            loadCameraCapabilities(lifecycleOwner, context) { capabilities ->
+                cameraCapabilities.mutate {
+                    add(capabilities)
+                }
             }
+                .await()
         }
     }
-
-    internal fun startFrameListener() = lifecycleScope.launch {
-        withContext(Dispatchers.IO) {
-            encoder.listenForEncodedFrames(frameCh)
-        }
-    }
-
 
     suspend fun bindCaptureUseCase(previewView: PreviewView) = runCatching {
         logcat { "running bindCaptureUseCase" }
@@ -331,20 +365,22 @@ class CameraStateHolder internal constructor(
         analyzer.setAnalyzer(mainThreadExecutor) { imageProxy ->
             val rotationDegrees = imageProxy.imageInfo.rotationDegrees
             logcat(LogPriority.VERBOSE) { "received a frame h:${imageProxy.height}, w:${imageProxy.width}, r:${rotationDegrees}" }
-            val nv21 = imageProxy.toNV21()
-            encoder.encodeFrame(nv21)
+            decoder.decode(imageProxy.toNV21())
             imageProxy.close()
         }
 
         try {
             logcat { "unbinding previous and binding to lifecycle" }
+            decoder.stop()
             cameraProvider.unbindAll()
             cameraProvider.bindToLifecycle(
                 lifecycleOwner, cameraSelector, preview, analyzer
             )
+            decoder.start()
             logcat { "unbound previous and bound to lifecycle" }
         } catch (e: Exception) {
             logcat { "Use case binding failed ${e.stackTraceToString()}" }
+            decoder.stop()
             resetUiState()
         }
         uiEnabled.emit(true)

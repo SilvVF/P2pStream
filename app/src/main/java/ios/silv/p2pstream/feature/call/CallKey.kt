@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package ios.silv.p2pstream.feature.call
 
 
@@ -6,6 +8,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,9 +20,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +34,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -41,6 +47,7 @@ import com.zhuinden.simplestack.ServiceBinder
 import com.zhuinden.simplestackcomposeintegration.core.LocalBackstack
 import com.zhuinden.simplestackextensions.servicesktx.add
 import com.zhuinden.simplestackextensions.servicesktx.lookup
+import io.libp2p.core.PeerId
 import ios.silv.p2pstream.base.ComposeKey
 import ios.silv.p2pstream.net.P2pManager
 import kotlinx.coroutines.channels.Channel
@@ -50,7 +57,7 @@ import javax.annotation.concurrent.Immutable
 
 @Immutable
 @Parcelize
-data object CallKey: ComposeKey() {
+data class CallKey(val peerId: String): ComposeKey() {
 
     override fun bindServices(serviceBinder: ServiceBinder) {
         with(serviceBinder) {
@@ -60,6 +67,14 @@ data object CallKey: ComposeKey() {
     
     @Composable
     override fun ScreenComposable(modifier: Modifier) {
+        val backstack = LocalBackstack.current
+        val viewModel = remember { backstack.lookup<CallViewModel>() }
+
+        DisposableEffect(Unit) {
+            val job = viewModel.start(peerId)
+            onDispose { job.cancel() }
+        }
+
         ComposeContent(modifier)
     }
 }
@@ -75,7 +90,6 @@ private fun ComposeContent(modifier: Modifier) {
     val backstack = LocalBackstack.current
     val viewModel = remember { backstack.lookup<CallViewModel>() }
     val lifecycle = LocalLifecycleOwner.current
-
 
     val context = LocalContext.current
     val permissionState = remember {
@@ -102,7 +116,7 @@ private fun ComposeContent(modifier: Modifier) {
 
     if (allGranted) {
         val cameraStateHolder =
-            remember { CameraStateHolder(context, lifecycle, Channel()) }
+            remember { CameraStateHolder(context, lifecycle, viewModel.frameCh) }
 
         LaunchedEffect(Unit) {
             cameraStateHolder.lifecycleOwner.lifecycleScope.launch {
@@ -115,24 +129,34 @@ private fun ComposeContent(modifier: Modifier) {
             }
 
         }
-        DisposableEffect(cameraStateHolder) {
-            cameraStateHolder.encoder.start()
-            val job = cameraStateHolder.startFrameListener()
-            onDispose {
-                job.cancel()
-                cameraStateHolder.encoder.stop()
-                cameraStateHolder.encoder.release()
+
+        val sampledFrame by viewModel.sampledFrame.collectAsStateWithLifecycle()
+        Scaffold(
+            modifier,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        val text by viewModel.currentState.collectAsStateWithLifecycle()
+                        Text(text.toString())
+                    }
+                )
             }
-        }
-
-
-        Scaffold(modifier) { paddingValues ->
-            CameraComposeView(
-                modifier = Modifier
-                    .padding(paddingValues)
-                    .fillMaxSize(),
-                cameraState = cameraStateHolder
-            )
+        ) { paddingValues ->
+            Box(Modifier.fillMaxSize()) {
+                CameraComposeView(
+                    modifier = Modifier
+                        .padding(paddingValues)
+                        .fillMaxSize(),
+                    cameraState = cameraStateHolder
+                )
+                sampledFrame?.let {
+                    Image(
+                        remember { it.asImageBitmap() },
+                        null,
+                        Modifier.align(Alignment.TopStart)
+                    )
+                }
+            }
         }
     } else {
         Column(

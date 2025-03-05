@@ -22,6 +22,8 @@ simpleStackCompose ="0.13.1"
 simpleStack = "2.9.0"
 simpleStackExt = "2.3.4"
 
+rootEncoder = "2.5.7"
+
 libp2p="1.2.2"
 
 [libraries]
@@ -62,6 +64,8 @@ androidx-camera-view= { module = "androidx.camera:camera-view", version.ref = "c
 
 kotlinx-serialization-json = {module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson"}
 
+root-encoder = { module = "com.github.pedroSG94.RootEncoder:library", version.ref = "rootEncoder"}
+root-encoder-sources = { module = "com.github.pedroSG94.RootEncoder:extra-sources", version.ref = "rootEncoder"}
 
 [plugins]
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
