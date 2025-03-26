@@ -5,10 +5,12 @@ package ios.silv.p2pstream.feature.call
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,24 +19,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -43,41 +48,29 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.zhuinden.simplestack.ServiceBinder
-import com.zhuinden.simplestackcomposeintegration.core.LocalBackstack
-import com.zhuinden.simplestackextensions.servicesktx.add
-import com.zhuinden.simplestackextensions.servicesktx.lookup
-import io.libp2p.core.PeerId
-import ios.silv.p2pstream.base.ComposeKey
-import ios.silv.p2pstream.net.P2pManager
-import kotlinx.coroutines.channels.Channel
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.compose.composable
+import ios.silv.p2pstream.base.createViewModel
 import kotlinx.coroutines.launch
-import kotlinx.parcelize.Parcelize
-import javax.annotation.concurrent.Immutable
+import kotlinx.serialization.Serializable
 
-@Immutable
-@Parcelize
-data class CallKey(val peerId: String): ComposeKey() {
+@Serializable
+data class CallScreen(val peerId: String)
 
-    override fun bindServices(serviceBinder: ServiceBinder) {
-        with(serviceBinder) {
-            add(CallViewModel(lookup<P2pManager>(), backstack))
-        }
-    }
-    
-    @Composable
-    override fun ScreenComposable(modifier: Modifier) {
-        val backstack = LocalBackstack.current
-        val viewModel = remember { backstack.lookup<CallViewModel>() }
+fun NavGraphBuilder.callScreen() {
+    composable<CallScreen> { backStackEntry ->
+
+        val viewModel = backStackEntry.createViewModel { savedStateHandle -> CallViewModel(savedStateHandle) }
 
         DisposableEffect(Unit) {
-            val job = viewModel.start(peerId)
+            val job = viewModel.start()
             onDispose { job.cancel() }
         }
 
-        ComposeContent(modifier)
+        ComposeContent(viewModel)
     }
 }
+
 
 private val requiredPermission = arrayOf(
     Manifest.permission.CAMERA,
@@ -86,15 +79,18 @@ private val requiredPermission = arrayOf(
 
 
 @Composable
-private fun ComposeContent(modifier: Modifier) {
-    val backstack = LocalBackstack.current
-    val viewModel = remember { backstack.lookup<CallViewModel>() }
+private fun ComposeContent(
+    viewModel: CallViewModel,
+    modifier: Modifier = Modifier
+) {
+
     val lifecycle = LocalLifecycleOwner.current
 
     val context = LocalContext.current
     val permissionState = remember {
         mutableStateMapOf<String, Boolean>().apply {
-            putAll(requiredPermission.zip(
+            putAll(
+                requiredPermission.zip(
                 Array(requiredPermission.size) {
                     context.checkSelfPermission(requiredPermission[it]) == PackageManager.PERMISSION_GRANTED
                 }
@@ -116,21 +112,7 @@ private fun ComposeContent(modifier: Modifier) {
 
     if (allGranted) {
         val cameraStateHolder =
-            remember { CameraStateHolder(context, lifecycle, viewModel.frameCh) }
-
-        LaunchedEffect(Unit) {
-            cameraStateHolder.lifecycleOwner.lifecycleScope.launch {
-                cameraStateHolder.lifecycleOwner.repeatOnLifecycle(Lifecycle.State.CREATED) {
-                    if (cameraStateHolder.deferredCapabilities != null) {
-                        cameraStateHolder.deferredCapabilities!!.await()
-                        cameraStateHolder.deferredCapabilities = null
-                    }
-                }
-            }
-
-        }
-
-        val sampledFrame by viewModel.sampledFrame.collectAsStateWithLifecycle()
+            remember(viewModel) { CameraStateHolder(context, lifecycle, FRAME_CH) }
         Scaffold(
             modifier,
             topBar = {
@@ -142,18 +124,43 @@ private fun ComposeContent(modifier: Modifier) {
                 )
             }
         ) { paddingValues ->
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().padding(paddingValues)) {
                 CameraComposeView(
                     modifier = Modifier
-                        .padding(paddingValues)
                         .fillMaxSize(),
                     cameraState = cameraStateHolder
                 )
-                sampledFrame?.let {
-                    Image(
-                        remember { it.asImageBitmap() },
-                        null,
-                        Modifier.align(Alignment.TopStart)
+                Box(
+                    Modifier.sizeIn(maxHeight = 200.dp, maxWidth = 200.dp)
+                        .align(Alignment.TopStart)
+                        .clip(MaterialTheme.shapes.medium)
+                        .clipToBounds()
+                        .border(2.dp, Color.Red)
+                ) {
+                    AndroidView(
+                        modifier = Modifier,
+                        factory = { context ->
+                            SurfaceView(context).apply {
+                                holder.addCallback(object : SurfaceHolder.Callback {
+                                    override fun surfaceCreated(holder: SurfaceHolder) {
+                                        val surface = holder.surface
+                                        viewModel.bind(surface)
+                                    }
+
+                                    override fun surfaceChanged(
+                                        holder: SurfaceHolder,
+                                        format: Int,
+                                        width: Int,
+                                        height: Int
+                                    ) {
+                                    }
+
+                                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                        viewModel.unbind()
+                                    }
+                                })
+                            }
+                        }
                     )
                 }
             }
@@ -194,7 +201,7 @@ private fun CameraComposeView(
             factory = { context ->
                 PreviewView(context).also { view ->
                     lifecycle.lifecycleScope.launch {
-                        lifecycle.repeatOnLifecycle(Lifecycle.State.CREATED) {
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                             cameraState.bindCaptureUseCase(view)
                         }
                     }
@@ -217,9 +224,12 @@ private fun CameraControls(
     state: CameraStateHolder.State
 ) {
 
-    val selectorStrings by remember {
+    val selectorStrings by remember(state.capabilities, state.cameraIdx) {
         derivedStateOf {
-            state.qualities.map { it.getNameString() }
+            state.capabilities.getOrNull(state.cameraIdx)
+                ?.qualities
+                ?.map { it.getNameString().ifEmpty { "Unknown format" } }
+                ?: emptyList()
         }
     }
 

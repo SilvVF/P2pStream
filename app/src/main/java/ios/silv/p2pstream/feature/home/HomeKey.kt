@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,7 +13,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
-import androidx.compose.material3.Card
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,7 +23,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -33,38 +30,31 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.zhuinden.simplestack.Backstack
-import com.zhuinden.simplestack.ServiceBinder
-import com.zhuinden.simplestackcomposeintegration.core.LocalBackstack
-import com.zhuinden.simplestackextensions.servicesktx.add
-import com.zhuinden.simplestackextensions.servicesktx.lookup
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.compose.composable
 import ios.silv.p2pstream.R
-import ios.silv.p2pstream.base.ComposeKey
-import ios.silv.p2pstream.net.P2pManager
-import kotlinx.parcelize.Parcelize
+import ios.silv.p2pstream.base.createViewModel
+import kotlinx.serialization.Serializable
 
-@Immutable
-@Parcelize
-data object HomeKey: ComposeKey(){
+@Serializable
+data object HomeScreen
 
-    override fun bindServices(serviceBinder: ServiceBinder) {
-        with(serviceBinder) {
-            add(HomeViewModel(lookup<P2pManager>(), backstack))
-        }
-    }
 
-    @Composable
-    override fun ScreenComposable(modifier: Modifier) {
-        ComposeContent(modifier)
+fun NavGraphBuilder.homeScreen() {
+    composable<HomeScreen> { backStackEntry ->
+        val viewModel =
+            backStackEntry.createViewModel { savedStateHandle -> HomeViewModel(savedStateHandle) }
+
+        ComposeContent(viewModel)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ComposeContent(modifier: Modifier) {
-    val backstack = LocalBackstack.current
-    val viewModel = remember { backstack.lookup<HomeViewModel>() }
-
+private fun ComposeContent(
+    viewModel: HomeViewModel,
+    modifier: Modifier = Modifier
+) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val text by viewModel.text.collectAsStateWithLifecycle()
 

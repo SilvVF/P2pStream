@@ -105,19 +105,17 @@ class P2pProtocol(
 
         private fun decodeType(msg: ByteBuf): Pair<Int, ByteArray> {
             val type = msg.readInt()
-            val data = msg.readBytes(msg.readableBytes())
-            return Pair(
-                type,
-                data.array().clone()
-            ).also { msg.clear() }
+            val data = ByteArray(msg.readableBytes())
+            msg.readBytes(data)
+
+            return Pair(type, data)
         }
 
         private fun encodeType(type: Int, data: ByteArray): ByteBuf {
-            val buf = ByteBuffer.allocate(Int.SIZE_BYTES + data.size).apply {
-                putInt(type)
-                put(data)
+            return Unpooled.buffer(Int.SIZE_BYTES + data.size).apply {
+               writeInt(type)
+               writeBytes(data)
             }
-            return buf.array().toByteBuf()
         }
 
         override fun send(message: String) {
@@ -128,6 +126,7 @@ class P2pProtocol(
         }
 
         override fun stream(frame: ByteArray) {
+            logcat { "streaming frame size: ${frame.size}" }
             val send = encodeType(FRAME, frame)
             stream.writeAndFlush(send)
         }

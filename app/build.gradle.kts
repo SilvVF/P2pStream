@@ -66,8 +66,6 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(libs.androidx.activity.compose)
 
-    implementation(libs.bundles.simple.stack)
-
     implementation(libs.bundles.compose.ui)
     implementation(libs.bundles.compose.runtime)
     implementation(libs.androidx.material3)
@@ -76,8 +74,9 @@ dependencies {
     implementation(libs.bundles.camerax)
 
     implementation(libs.libp2p)
-    implementation(libs.root.encoder)
-    implementation(libs.root.encoder.sources)
 
     implementation(libs.kotlinx.serialization.json)
+
+    implementation(libs.stream.video.android.core)
+    implementation(libs.stream.video.android.ui.compose)
 }

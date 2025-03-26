@@ -1,67 +1,82 @@
 package ios.silv.p2pstream.feature.call
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
-import com.zhuinden.simplestack.Backstack
+import android.view.Surface
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.navigation.toRoute
 import io.libp2p.core.PeerId
-import ios.silv.p2pstream.base.BaseViewModel
+import ios.silv.p2pstream.dependency.DependencyAccessor
+import ios.silv.p2pstream.dependency.commonDeps
 import ios.silv.p2pstream.log.logcat
 import ios.silv.p2pstream.net.CallState
 import ios.silv.p2pstream.net.Message
 import ios.silv.p2pstream.net.P2pManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.supervisorScope
 
-class CallViewModel(
-    private val p2pManager: P2pManager,
-    backstack: Backstack
-): BaseViewModel() {
+val FRAME_CH = Channel<ByteArray>()
+private var job: Job? = null
 
+class CallViewModel @OptIn(DependencyAccessor::class) constructor(
+    savedStateHandle: SavedStateHandle,
+    private val p2pManager: P2pManager = commonDeps.p2pManager
+): ViewModel() {
+
+    val args = savedStateHandle.toRoute<CallScreen>()
     val currentState = MutableStateFlow(CallState.DISCONNECTED)
-    val sampledFrame = MutableStateFlow<Bitmap?>(null)
 
-    val frameCh = Channel<ByteArray>()
+    private val decoder = MediaDecoder()
 
-
-    fun start(peerId: String) = scope.launch {
-        launch {
-            p2pManager.callState.collect {
-                currentState.emit(it[PeerId.fromBase58(peerId)] ?: CallState.DISCONNECTED)
+    init {
+        job?.cancel()
+        job = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val controller = p2pManager.node.peers[PeerId.fromBase58(args.peerId)]!!.controller
+                for (frame in FRAME_CH) {
+                    logcat { "read from from frameCh size ${frame.size}" }
+                    controller.stream(frame)
+                }
+            } finally {
+                logcat { "frameCh closed" }
+                awaitCancellation()
             }
         }
-        launch {
-            val chF = frameCh.receiveAsFlow().sample(100.milliseconds)
-            chF.collect {
-                p2pManager.node.sendTo(PeerId.fromBase58(peerId), it)
-            }
-        }
+    }
 
-        p2pManager.message
-            .filterIsInstance<Message.Frame>()
-            .filter { msg -> msg.peerId == peerId }
-            .sample(4.seconds)
-            .collect { frame ->
-                logcat { "viewmodel sampled frame from $peerId" }
-                sampledFrame.update { prev ->
-                    prev?.recycle()
-                    BitmapFactory.decodeByteArray(frame.data, 0, frame.data.size)
+    fun bind(surface: Surface) {
+        decoder.initDecoder(surface)
+    }
+
+    fun unbind() {
+        decoder.stop()
+    }
+
+    fun start() = viewModelScope.launch {
+        supervisorScope {
+            val p2pPeerId = PeerId.fromBase58(args.peerId)
+            launch {
+                p2pManager.callState.collect {
+                    currentState.emit(it[p2pPeerId] ?: CallState.DISCONNECTED)
                 }
             }
+
+            launch(Dispatchers.IO) {
+                p2pManager.message
+                    .filterIsInstance<Message.Frame>()
+                    .filter { msg -> msg.peerId == args.peerId }
+                    .collect { frame ->
+                        logcat { "viewmodel sampled frame from ${args.peerId}" }
+                        decoder.decode(frame.data)
+                    }
+            }
+        }
     }
 }
